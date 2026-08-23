@@ -177,7 +177,15 @@ const emailService = {
 			attachments = [] //附件
 		} = params;
 
-		const { resendTokens, r2Domain, send, domainList } = await settingService.query(c);
+		const {
+				resendTokens,
+				r2Domain,
+				send,
+				domainList,
+				tgBotStatus,
+				tgBotToken,
+				tgChatId
+				} = await settingService.query(c);
 
 		let { imageDataList, html } = await attService.toImageUrlHtml(c, content);
 
@@ -369,9 +377,22 @@ const emailService = {
 		const attList = await attService.selectByEmailIds(c, [emailResult.emailId]);
 		emailResult.attList = attList;
 
-		//如果全是站内接收方，直接写入数据库
+		//如果全是站内接收方，直接写入数据库，并转发到 Telegram
 		if (allInternal) {
 			await this.HandleOnSiteEmail(c, receiveEmail, emailResult, attList);
+		
+			if (
+				tgBotStatus === settingConst.tgBotStatus.OPEN &&
+				tgBotToken &&
+				tgChatId
+			) {
+				try {
+					await telegramService.sendEmailToBot(c, emailResult);
+				} catch (error) {
+					// Telegram 转发失败不影响站内邮件发送
+					console.error('站内邮件转发 Telegram 失败:', error);
+				}
+			}
 		}
 
 		const dateStr = dayjs().format('YYYY-MM-DD');

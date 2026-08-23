@@ -378,22 +378,24 @@ const emailService = {
 		emailResult.attList = attList;
 
 		//如果全是站内接收方，直接写入数据库，并转发到 Telegram
-		if (allInternal) {
-			await this.HandleOnSiteEmail(c, receiveEmail, emailResult, attList);
-		
-			if (
-				tgBotStatus === settingConst.tgBotStatus.OPEN &&
-				tgBotToken &&
-				tgChatId
-			) {
-				try {
-					await telegramService.sendEmailToBot(c, emailResult);
-				} catch (error) {
-					// Telegram 转发失败不影响站内邮件发送
-					console.error('站内邮件转发 Telegram 失败:', error);
-				}
-			}
+if (allInternal) {
+	await this.HandleOnSiteEmail(c, receiveEmail, emailResult, attList);
+
+	if (
+		tgBotStatus === settingConst.tgBotStatus.OPEN &&
+		tgBotToken &&
+		tgChatId
+	) {
+		//发送记录使用 recipient 字段，Telegram 模板使用 toEmail
+		emailResult.toEmail = receiveEmail.join(', ');
+
+		try {
+			await telegramService.sendEmailToBot(c, emailResult);
+		} catch (error) {
+			console.error('站内邮件转发 Telegram 失败:', error);
 		}
+	}
+}
 
 		const dateStr = dayjs().format('YYYY-MM-DD');
 		let daySendTotal = await c.env.kv.get(kvConst.SEND_DAY_COUNT + dateStr);

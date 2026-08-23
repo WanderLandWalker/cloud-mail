@@ -1,64 +1,65 @@
 import emailUtils from '../utils/email-utils';
 
-const TELEGRAM_MESSAGE_LIMIT = 3500;
-const TRUNCATED_SUFFIX = '...';
+function getToEmail(email) {
+	if (email.toEmail) {
+		return email.toEmail;
+	}
 
-function escapeHtml(text = '') {
-	return text
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;');
+	if (!email.recipient) {
+		return '';
+	}
+
+	try {
+		const recipients = typeof email.recipient === 'string'
+			? JSON.parse(email.recipient)
+			: email.recipient;
+
+		if (Array.isArray(recipients)) {
+			return recipients
+				.map(item => {
+					if (typeof item === 'string') return item;
+					return item.address || item.email || '';
+				})
+				.filter(Boolean)
+				.join(', ');
+		}
+	} catch {
+		return '';
+	}
+
+	return '';
 }
 
-function truncateText(text, maxLength) {
-	if (!text || text.length <= maxLength) {
-		return text || '';
+export default function emailMsgTemplate(
+	email,
+	tgMsgTo,
+	tgMsgFrom,
+	tgMsgText
+) {
+	let template = `${email.subject || ''}`;
+	const toEmail = getToEmail(email);
+
+	if (tgMsgFrom === 'only-name') {
+		template += ` From：${email.name || ''}`;
 	}
 
-	if (maxLength <= TRUNCATED_SUFFIX.length) {
-		return TRUNCATED_SUFFIX.slice(0, maxLength);
+	if (tgMsgFrom === 'show') {
+		template += ` From：${email.name || ''} <${email.sendEmail || ''}>`;
 	}
 
-	return text.slice(0, maxLength - TRUNCATED_SUFFIX.length) + TRUNCATED_SUFFIX;
-}
-
-export default function emailMsgTemplate(email, tgMsgTo, tgMsgFrom, tgMsgText) {
-
-	let template = `<b>${escapeHtml(email.subject || '')}</b>`
-
-		if (tgMsgFrom === 'only-name') {
-			template += `
-
-From\u200B：${escapeHtml(email.name || '')}`
-		}
-
-		if (tgMsgFrom === 'show') {
-			template += `
-
-From\u200B：${escapeHtml(email.name || '')}  &lt;${escapeHtml(email.sendEmail || '')}&gt;`
-		}
-
-		if(tgMsgTo === 'show' && tgMsgFrom === 'hide') {
-			template += `
-
-To：\u200B${escapeHtml(email.toEmail || '')}`
-
-		} else if(tgMsgTo === 'show') {
-		template += `
-To：\u200B${escapeHtml(email.toEmail || '')}`
+	if (tgMsgTo === 'show') {
+		template += ` To：${toEmail}`;
 	}
 
-	const text = escapeHtml(emailUtils.formatText(email.text) || emailUtils.htmlToText(email.content));
+	const text = (
+		emailUtils.formatText(email.text) ||
+		emailUtils.htmlToText(email.content) ||
+		''
+	).replace(/</g, '&lt;');
 
-	if(tgMsgText === 'show') {
-		const prefix = `${template}
-
-`;
-		const maxTextLength = Math.max(0, TELEGRAM_MESSAGE_LIMIT - prefix.length);
-		template += `
-
-${truncateText(text, maxTextLength)}`
+	if (tgMsgText === 'show') {
+		template += ` ${text}`;
 	}
 
 	return template;
-
 }

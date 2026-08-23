@@ -390,7 +390,12 @@ if (allInternal) {
 		emailResult.toEmail = receiveEmail.join(', ');
 
 		try {
-			await telegramService.sendEmailToBot(c, emailResult);
+			const telegramEmail = {
+				...emailResult,
+				toEmail: receiveEmail.join(', ')
+			};
+			
+			await telegramService.sendEmailToBot(c, telegramEmail);
 		} catch (error) {
 			console.error('站内邮件转发 Telegram 失败:', error);
 		}

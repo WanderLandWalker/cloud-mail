@@ -6,10 +6,20 @@
     </div>
     <el-scrollbar class="scrollbar" ref="scrollbarRef">
       <div v-infinite-scroll="getAccountList" :infinite-scroll-distance="600" :infinite-scroll-immediate="false">
-        <el-card class="item" :class="itemBg(item.accountId)" v-for="(item, index) in accounts" :key="item.accountId"
-                 @click="changeAccount(item)">
+        <el-card class="item" :class="[itemBg(item.accountId), {
+                   'item-dragging': draggingAccountId === item.accountId,
+                   'item-drag-over': dragOverAccountId === item.accountId
+                 }]"
+                 v-for="(item, index) in accounts" :key="item.accountId"
+                 :draggable="accounts.length > 1 && !reorderLoading"
+                 @click="changeAccount(item)"
+                 @dragstart="handleDragStart($event, item)"
+                 @dragover.prevent="handleDragOver($event, item)"
+                 @drop.prevent.stop="handleDrop($event, item)"
+                 @dragend="handleDragEnd">
           <div class="account">
-            {{ item.email }}
+            <div class="account-name">{{ item.name || item.email }}</div>
+            <div class="account-email">{{ item.email }}</div>
           </div>
           <div class="opt">
             <div class="send-email" @click.stop>
@@ -135,7 +145,8 @@ import {
   accountDelete,
   accountSetName,
   accountSetAllReceive,
-  accountSetAsTop
+  accountSetAsTop,
+  accountMove
 } from "@/request/account.js";
 import {sleep} from "@/utils/time-utils.js"
 import {isEmail} from "@/utils/verify-utils.js";
@@ -163,6 +174,9 @@ const verifyShow = ref(false)
 const setNameShow = ref(false)
 const setNameLoading = ref(false)
 const accountName = ref(null)
+const draggingAccountId = ref(null)
+const dragOverAccountId = ref(null)
+const reorderLoading = ref(false)
 const addRef = ref({})
 const scrollbarRef = ref({})
 let account = null
@@ -366,6 +380,66 @@ function setAsTop(account, index) {
     accounts.splice(1, 0, item);
 
   });
+}
+
+function handleDragStart(event, accountItem) {
+  if (event.target?.closest?.('.opt')) {
+    event.preventDefault()
+    return
+  }
+
+  draggingAccountId.value = accountItem.accountId
+  dragOverAccountId.value = null
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', String(accountItem.accountId))
+}
+
+function handleDragOver(event, accountItem) {
+  if (!draggingAccountId.value || draggingAccountId.value === accountItem.accountId) return
+  dragOverAccountId.value = accountItem.accountId
+  event.dataTransfer.dropEffect = 'move'
+}
+
+function handleDrop(event, targetAccount) {
+  const movingAccountId = draggingAccountId.value
+  if (!movingAccountId || movingAccountId === targetAccount.accountId || reorderLoading.value) {
+    handleDragEnd()
+    return
+  }
+
+  const movingIndex = accounts.findIndex(item => item.accountId === movingAccountId)
+  const targetIndex = accounts.findIndex(item => item.accountId === targetAccount.accountId)
+  if (movingIndex === -1 || targetIndex === -1) {
+    handleDragEnd()
+    return
+  }
+
+  const targetElement = event.currentTarget
+  const targetRect = targetElement.getBoundingClientRect()
+  const before = event.clientY < targetRect.top + targetRect.height / 2
+  const previousOrder = accounts.slice()
+  const [movingAccount] = accounts.splice(movingIndex, 1)
+  const targetIndexAfterRemove = movingIndex < targetIndex ? targetIndex - 1 : targetIndex
+  const insertIndex = before ? targetIndexAfterRemove : targetIndexAfterRemove + 1
+  accounts.splice(insertIndex, 0, movingAccount)
+
+  if (accounts.findIndex(item => item.accountId === movingAccountId) === movingIndex) {
+    handleDragEnd()
+    return
+  }
+
+  reorderLoading.value = true
+  accountMove(movingAccountId, targetAccount.accountId, before).catch(() => {
+    accounts.splice(0, accounts.length, ...previousOrder)
+  }).finally(() => {
+    reorderLoading.value = false
+    handleDragEnd()
+  })
+}
+
+function handleDragEnd() {
+  draggingAccountId.value = null
+  dragOverAccountId.value = null
 }
 
 async function copyAccount(account) {
@@ -623,8 +697,24 @@ path[fill="#ffdda1"] {
       font-weight: 600;
       margin-bottom: 20px;
       overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
+
+      .account-name,
+      .account-email {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+
+      .account-name {
+        color: var(--el-text-color-primary);
+      }
+
+      .account-email {
+        margin-top: 3px;
+        color: var(--secondary-text-color);
+        font-size: 12px;
+        font-weight: 400;
+      }
     }
 
     .opt {
@@ -656,6 +746,22 @@ path[fill="#ffdda1"] {
 
   .item-choose {
     background: var(--choose-account-background);
+  }
+
+  .item[draggable="true"] {
+    cursor: grab;
+  }
+
+  .item[draggable="true"]:active {
+    cursor: grabbing;
+  }
+
+  .item-dragging {
+    opacity: 0.45;
+  }
+
+  .item-drag-over {
+    border-color: var(--el-color-primary);
   }
 }
 

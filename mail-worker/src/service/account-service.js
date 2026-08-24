@@ -328,6 +328,42 @@ const accountService = {
 		let mainSort = mainAccountRow.sort === 0 ? 2 : mainAccountRow.sort + 1;
 		await orm(c).update(account).set({ sort: mainSort }).where(eq(account.email, userRow.email )).run();
 		await orm(c).update(account).set({ sort: mainSort - 1 }).where(and(eq(account.accountId, accountId),eq(account.userId,userId))).run();
+	},
+
+	async move(c, params, userId) {
+		const accountId = Number(params.accountId);
+		const targetAccountId = Number(params.targetAccountId);
+		const before = params.before !== false;
+
+		if (!Number.isInteger(accountId) || !Number.isInteger(targetAccountId) || accountId === targetAccountId) {
+			return;
+		}
+
+		const accountRows = await orm(c)
+			.select()
+			.from(account)
+			.where(and(eq(account.userId, userId), eq(account.isDel, isDel.NORMAL)))
+			.orderBy(desc(account.sort), asc(account.accountId))
+			.all();
+
+		const movingIndex = accountRows.findIndex(row => row.accountId === accountId);
+		const targetIndex = accountRows.findIndex(row => row.accountId === targetAccountId);
+		if (movingIndex === -1 || targetIndex === -1) {
+			throw new BizError(t('noUserAccount'));
+		}
+
+		const [movingAccount] = accountRows.splice(movingIndex, 1);
+		const targetIndexAfterRemove = movingIndex < targetIndex ? targetIndex - 1 : targetIndex;
+		const insertIndex = before ? targetIndexAfterRemove : targetIndexAfterRemove + 1;
+		accountRows.splice(insertIndex, 0, movingAccount);
+
+		for (let index = 0; index < accountRows.length; index++) {
+			await orm(c)
+				.update(account)
+				.set({sort: accountRows.length - index})
+				.where(and(eq(account.accountId, accountRows[index].accountId), eq(account.userId, userId)))
+				.run();
+		}
 	}
 };
 

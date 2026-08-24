@@ -18,6 +18,11 @@ app.post('/account/add', async (c) => {
 	return c.json(result.ok(account));
 });
 
+app.post('/account/recreate', async (c) => {
+	const account = await accountService.recreateByEmail(c, await c.req.json(), userContext.getUserId(c));
+	return c.json(result.ok(account));
+});
+
 app.put('/account/setName', async (c) => {
 	await accountService.setName(c, await c.req.json(), userContext.getUserId(c));
 	return c.json(result.ok());

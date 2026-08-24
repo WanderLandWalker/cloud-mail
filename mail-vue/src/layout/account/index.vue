@@ -131,6 +131,7 @@ import {computed, nextTick, reactive, ref, watch} from "vue";
 import {
   accountList,
   accountAdd,
+  accountRecreate,
   accountDelete,
   accountSetName,
   accountSetAllReceive,
@@ -484,7 +485,8 @@ function submit() {
   }
 
   addLoading.value = true
-  accountAdd(addForm.email + addForm.suffix, verifyToken).then(account => {
+  const email = addForm.email + addForm.suffix
+  accountAdd(email, verifyToken).then(account => {
     addLoading.value = false
     addForm.email = ''
     accounts.push(account)
@@ -501,6 +503,31 @@ function submit() {
       addRef.value.focus()
     })
   }).catch(res => {
+    if (res.code === 409) {
+      ElMessageBox.confirm(t('recreateAccountConfirm', {msg: email}), {
+        confirmButtonText: t('confirm'),
+        cancelButtonText: t('cancel'),
+        type: 'warning'
+      }).then(() => accountRecreate(email, verifyToken)).then(account => {
+        addForm.email = ''
+        accounts.push(account)
+        verifyToken = ''
+        if (account.addVerifyOpen !== undefined) {
+          settingStore.settings.addVerifyOpen = account.addVerifyOpen
+        }
+        verifyShow.value = false
+        userStore.refreshUserInfo()
+        ElMessage({
+          message: t('recreateSuccessMsg'),
+          type: "success",
+          plain: true
+        })
+      }).catch(() => {}).finally(() => {
+        addLoading.value = false
+      })
+      return
+    }
+
     if (res.code === 400) {
       verifyToken = ''
       if (turnstileId) {

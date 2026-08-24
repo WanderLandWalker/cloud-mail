@@ -50,7 +50,7 @@ const accountService = {
 		let accountRow = await this.selectByEmailIncludeDel(c, email);
 
 		if (accountRow && accountRow.isDel === isDel.DELETE) {
-			throw new BizError(t('isDelAccount'));
+			throw new BizError(t('isDelAccount'), 409);
 		}
 
 		if (accountRow) {
@@ -101,6 +101,10 @@ const accountService = {
 
 	selectByEmailIncludeDel(c, email) {
 		return orm(c).select().from(account).where(sql`${account.email} COLLATE NOCASE = ${email}`).get();
+	},
+
+	selectByIdIncludeDel(c, accountId) {
+		return orm(c).select().from(account).where(eq(account.accountId, Number(accountId))).get();
 	},
 
 	list(c, params, userId) {
@@ -213,6 +217,60 @@ const accountService = {
 
 	async restoreByUserId(c, userId) {
 		await orm(c).update(account).set({isDel: isDel.NORMAL}).where(eq(account.userId, userId)).run();
+	},
+
+	async restoreDeletedChild(c, params) {
+		const accountRow = await this.getDeletedChild(c, params.accountId);
+		return this.restoreDeletedAccount(c, accountRow);
+	},
+
+	async recreateById(c, params) {
+		const accountRow = await this.getDeletedChild(c, params.accountId);
+		return this.restoreDeletedAccount(c, accountRow);
+	},
+
+	async recreateByEmail(c, params, userId) {
+		const accountRow = await this.selectByEmailIncludeDel(c, params.email);
+		if (!accountRow || accountRow.isDel !== isDel.DELETE) {
+			throw new BizError(t('accountNotDeleted'));
+		}
+
+		if (accountRow.userId !== userId) {
+			throw new BizError(t('noUserAccount'));
+		}
+
+		const owner = await userService.selectByIdIncludeDel(c, accountRow.userId);
+		if (!owner || owner.email === accountRow.email) {
+			throw new BizError(t('mainAccountActionDenied'));
+		}
+
+		return this.restoreDeletedAccount(c, accountRow);
+	},
+
+	async getDeletedChild(c, accountId) {
+		const accountRow = await this.selectByIdIncludeDel(c, accountId);
+		if (!accountRow) {
+			throw new BizError(t('notExistAccount'));
+		}
+
+		if (accountRow.isDel !== isDel.DELETE) {
+			throw new BizError(t('accountNotDeleted'));
+		}
+
+		const owner = await userService.selectByIdIncludeDel(c, accountRow.userId);
+		if (!owner || owner.email === accountRow.email) {
+			throw new BizError(t('mainAccountActionDenied'));
+		}
+
+		return accountRow;
+	},
+
+	async restoreDeletedAccount(c, accountRow) {
+		return orm(c).update(account)
+			.set({isDel: isDel.NORMAL})
+			.where(and(eq(account.accountId, accountRow.accountId), eq(account.isDel, isDel.DELETE)))
+			.returning()
+			.get();
 	},
 
 	async setName(c, params, userId) {

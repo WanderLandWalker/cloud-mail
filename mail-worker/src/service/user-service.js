@@ -375,6 +375,62 @@ const userService = {
 
 	},
 
+	async promoteAccount(c, params) {
+		const accountId = Number(params.accountId);
+		const password = params.password;
+		if (!password || password.length < 6) {
+			throw new BizError(t('pwdMinLength'));
+		}
+
+		const accountRow = await accountService.selectByIdIncludeDel(c, accountId);
+		if (!accountRow) {
+			throw new BizError(t('notExistAccount'));
+		}
+
+		const owner = await this.selectByIdIncludeDel(c, accountRow.userId);
+		if (!owner || owner.email === accountRow.email) {
+			throw new BizError(t('mainAccountActionDenied'));
+		}
+
+		const existingUser = await this.selectByEmailIncludeDel(c, accountRow.email);
+		if (existingUser) {
+			throw new BizError(t('accountAlreadyUser'));
+		}
+
+		let type = Number(params.type);
+		if (!type) {
+			const defaultRole = await roleService.selectDefaultRole(c);
+			type = defaultRole?.roleId;
+		}
+		const roleRow = await roleService.selectById(c, type);
+		if (!roleRow) {
+			throw new BizError(t('roleNotExist'));
+		}
+
+		const { salt, hash } = await saltHashUtils.hashPassword(password);
+		const newUserId = await this.insert(c, {
+			email: accountRow.email,
+			password: hash,
+			salt,
+			type
+		});
+
+		try {
+			await this.updateUserInfo(c, newUserId, true);
+			await c.env.db.batch([
+				c.env.db.prepare('UPDATE account SET user_id = ?, is_del = 0 WHERE account_id = ? AND user_id = ?').bind(newUserId, accountId, accountRow.userId),
+				c.env.db.prepare('UPDATE email SET user_id = ? WHERE account_id = ?').bind(newUserId, accountId),
+				c.env.db.prepare('UPDATE attachments SET user_id = ? WHERE account_id = ?').bind(newUserId, accountId),
+				c.env.db.prepare('UPDATE star SET user_id = ? WHERE user_id = ? AND email_id IN (SELECT email_id FROM email WHERE account_id = ?)').bind(newUserId, accountRow.userId, accountId)
+			]);
+		} catch (error) {
+			await orm(c).delete(user).where(eq(user.userId, newUserId)).run();
+			throw error;
+		}
+
+		return { userId: newUserId, email: accountRow.email, accountId, type };
+	},
+
 	listByRegKeyId(c, regKeyId) {
 		return orm(c)
 			.select({email: user.email,createTime: user.createTime})

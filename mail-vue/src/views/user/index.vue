@@ -200,13 +200,16 @@
             <el-tag type="info" disable-transitions v-if="props.row.isDel === 1">{{$t('deleted')}}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="t('action')" :width="locale === 'en' ? 75 : 65" >
+        <el-table-column :label="t('action')" :width="locale === 'en' ? 190 : 160" >
           <template #default="props">
             <el-dropdown trigger="click">
               <el-button type="primary" size="small">{{t('action')}}</el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item @click="deleteAccount(props.row)">{{ $t('delete') }}</el-dropdown-item>
+                  <el-dropdown-item v-if="props.row.email !== accountOwnerEmail && props.row.isDel === 0 && hasPerm('user:delete')" @click="deleteAccount(props.row)">{{ $t('delete') }}</el-dropdown-item>
+                  <el-dropdown-item v-if="props.row.email !== accountOwnerEmail && props.row.isDel === 1 && hasPerm('user:set-status')" @click="restoreAccount(props.row)">{{ $t('restore') }}</el-dropdown-item>
+                  <el-dropdown-item v-if="props.row.email !== accountOwnerEmail && props.row.isDel === 1 && hasPerm('user:delete')" @click="recreateAccount(props.row)">{{ $t('recreate') }}</el-dropdown-item>
+                  <el-dropdown-item v-if="props.row.email !== accountOwnerEmail && hasPerm('user:add')" @click="openPromoteAccount(props.row)">{{ $t('promoteToUser') }}</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -223,6 +226,18 @@
             :total="accountParams.total"
             @current-change="accountCurChange"
         />
+      </div>
+    </el-dialog>
+    <el-dialog class="dialog" v-model="promoteShow" :title="$t('promoteToUser')" @closed="resetPromoteForm">
+      <div class="dialog-box">
+        <div class="email-row">{{ promoteForm.email }}</div>
+        <el-input v-model="promoteForm.password" type="password" :placeholder="$t('newPassword')" autocomplete="off" />
+        <el-select v-model="promoteForm.type" :placeholder="$t('perm')">
+          <el-option v-for="item in roleList" :label="item.name" :value="item.roleId" :key="item.roleId" />
+        </el-select>
+        <el-button class="btn" type="primary" :loading="promoteLoading" @click="promoteAccount">
+          {{ $t('save') }}
+        </el-button>
       </div>
     </el-dialog>
     <el-dialog class="account-dialog" v-model="detailsShow" :title="t('userDetails')"  >
@@ -375,6 +390,9 @@ import {
   userAdd,
   userRestSendCount,
   userRestore,
+  userRestoreAccount,
+  userRecreateAccount,
+  userPromoteAccount,
   userDeleteAccount,
   userAllAccount
 } from '@/request/user.js'
@@ -386,6 +404,7 @@ import {useSettingStore} from "@/store/setting.js";
 import {isEmail} from "@/utils/verify-utils.js";
 import {useRoleStore} from "@/store/role.js";
 import {useUserStore} from "@/store/user.js";
+import {hasPerm} from "@/perm/perm.js";
 import {useI18n} from 'vue-i18n';
 
 defineOptions({
@@ -419,6 +438,9 @@ const total = ref(0)
 const first = ref(true)
 const scrollbarRef = ref(null)
 const accountLoading = ref(false)
+const accountOwnerEmail = ref('')
+const promoteShow = ref(false)
+const promoteLoading = ref(false)
 const dropdownRef = ref(null);
 const dropdownShow = ref(false);
 const rightClickUser = ref({});
@@ -473,6 +495,12 @@ const accountParams = reactive({
   num: 0,
   total: 0,
   userId: 0,
+})
+const promoteForm = reactive({
+  accountId: 0,
+  email: '',
+  password: '',
+  type: null,
 })
 
 roleSelectUse().then(list => {
@@ -567,6 +595,99 @@ function deleteAccount(account) {
     })
   });
 }
+
+function restoreAccount(account) {
+  ElMessageBox.confirm(t('restoreAccountConfirm', {msg: account.email}), {
+    confirmButtonText: t('confirm'),
+    cancelButtonText: t('cancel'),
+    type: 'warning'
+  }).then(() => {
+    userRestoreAccount(account.accountId).then(() => {
+      account.isDel = 0
+      ElMessage({
+        message: t('restoreSuccessMsg'),
+        type: "success",
+        plain: true
+      })
+    })
+  })
+}
+
+function recreateAccount(account) {
+  ElMessageBox.confirm(t('recreateAccountConfirm', {msg: account.email}), {
+    confirmButtonText: t('confirm'),
+    cancelButtonText: t('cancel'),
+    type: 'warning'
+  }).then(() => {
+    userRecreateAccount(account.accountId).then(() => {
+      account.isDel = 0
+      ElMessage({
+        message: t('recreateSuccessMsg'),
+        type: "success",
+        plain: true
+      })
+    })
+  })
+}
+
+function openPromoteAccount(account) {
+  promoteForm.accountId = account.accountId
+  promoteForm.email = account.email
+  promoteForm.password = ''
+  promoteForm.type = roleList.find(role => role.isDefault)?.roleId || roleList[0]?.roleId || null
+  promoteShow.value = true
+}
+
+function resetPromoteForm() {
+  promoteForm.accountId = 0
+  promoteForm.email = ''
+  promoteForm.password = ''
+  promoteForm.type = null
+}
+
+function promoteAccount() {
+  if (promoteLoading.value) return
+
+  if (!promoteForm.password) {
+    ElMessage({message: t('emptyPwdMsg'), type: 'error', plain: true})
+    return
+  }
+
+  if (promoteForm.password.length < 6) {
+    ElMessage({message: t('pwdLengthMsg'), type: 'error', plain: true})
+    return
+  }
+
+  if (!promoteForm.type) {
+    ElMessage({message: t('emptyRole'), type: 'error', plain: true})
+    return
+  }
+
+  ElMessageBox.confirm(t('promoteAccountConfirm', {msg: promoteForm.email}), {
+    confirmButtonText: t('confirm'),
+    cancelButtonText: t('cancel'),
+    type: 'warning'
+  }).then(() => {
+    promoteLoading.value = true
+    userPromoteAccount({
+      accountId: promoteForm.accountId,
+      password: promoteForm.password,
+      type: promoteForm.type,
+    }).then(() => {
+      promoteShow.value = false
+      getAccountList()
+      getUserList(false)
+      ElMessage({
+        message: t('saveSuccessMsg'),
+        type: "success",
+        plain: true
+      })
+    }).finally(() => {
+      promoteLoading.value = false
+    })
+  })
+}
+
 function accountCurChange(e) {
   accountParams.num = e
   getAccountList()
@@ -577,10 +698,12 @@ function resetAccountList() {
   accountParams.num = 0
   accountParams.size = 10
   accountParams.total = 0
+  accountOwnerEmail.value = ''
 }
 
 function openAccountList(userId) {
   accountParams.userId = userId
+  accountOwnerEmail.value = users.value.find(user => user.userId === userId)?.email || ''
   getAccountList(true)
   accountShow.value = true
 }

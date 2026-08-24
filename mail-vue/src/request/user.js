@@ -34,6 +34,18 @@ export function userRestore(userId,type) {
     return http.put('/user/restore', {userId,type})
 }
 
+export function userRestoreAccount(accountId) {
+    return http.put('/user/restoreAccount', {accountId})
+}
+
+export function userRecreateAccount(accountId) {
+    return http.post('/user/recreateAccount', {accountId})
+}
+
+export function userPromoteAccount(params) {
+    return http.post('/user/promoteAccount', params)
+}
+
 export function userAllAccount(userId, num, size) {
     return http.get('/user/allAccount', {params:{userId,num,size}})
 }

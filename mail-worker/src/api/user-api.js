@@ -44,6 +44,21 @@ app.put('/user/restore', async (c) => {
 	return c.json(result.ok());
 });
 
+app.put('/user/restoreAccount', async (c) => {
+	const account = await accountService.restoreDeletedChild(c, await c.req.json());
+	return c.json(result.ok(account));
+});
+
+app.post('/user/recreateAccount', async (c) => {
+	const account = await accountService.recreateById(c, await c.req.json());
+	return c.json(result.ok(account));
+});
+
+app.post('/user/promoteAccount', async (c) => {
+	const user = await userService.promoteAccount(c, await c.req.json());
+	return c.json(result.ok(user));
+});
+
 app.get('/user/allAccount', async (c) => {
 	const data = await accountService.allAccount(c, c.req.query());
 	return c.json(result.ok(data));

@@ -43,11 +43,11 @@ const telegramService = {
 
 	},
 
-	async sendEmailToBot(c, email) {
+	async sendEmailToBot(c, email, bot) {
 
-		const { tgBotToken, tgChatId, customDomain, tgMsgTo, tgMsgFrom, tgMsgText } = await settingService.query(c);
-
-		const tgChatIds = tgChatId.split(',');
+		const { token, chatIds, customDomain, msgTo, msgFrom, msgText } = bot;
+		const tgChatIds = Array.isArray(chatIds) ? chatIds : String(chatIds || '').split(',');
+		if (!token || tgChatIds.length === 0) return;
 
 		const jwtToken = await jwtUtils.generateToken(c, { emailId: email.emailId })
 
@@ -72,7 +72,7 @@ const telegramService = {
 
 		await Promise.all(tgChatIds.map(async chatId => {
 			try {
-				const res = await fetch(`https://api.telegram.org/bot${tgBotToken}/sendMessage`, {
+				const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json'
@@ -80,7 +80,7 @@ const telegramService = {
 					body: JSON.stringify({
 						chat_id: chatId,
 						parse_mode: 'HTML',
-						text: emailMsgTemplate(email, tgMsgTo, tgMsgFrom, tgMsgText),
+						text: emailMsgTemplate(email, msgTo, msgFrom, msgText),
 						reply_markup: {
 							inline_keyboard: inlineKeyboard
 						}

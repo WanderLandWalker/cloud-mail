@@ -21,7 +21,7 @@ import { t } from '../i18n/i18n'
 import domainUtils from '../utils/domain-uitls';
 import account from "../entity/account";
 import { att } from '../entity/att';
-import telegramService from './telegram-service';
+import telegramBotService from './telegram-bot-service';
 
 const emailService = {
 
@@ -182,9 +182,6 @@ const emailService = {
 				r2Domain,
 				send,
 				domainList,
-				tgBotStatus,
-				tgBotToken,
-				tgChatId
 				} = await settingService.query(c);
 
 		let { imageDataList, html } = await attService.toImageUrlHtml(c, content);
@@ -381,11 +378,7 @@ const emailService = {
 if (allInternal) {
 	await this.HandleOnSiteEmail(c, receiveEmail, emailResult, attList);
 
-	if (
-		tgBotStatus === settingConst.tgBotStatus.OPEN &&
-		tgBotToken &&
-		tgChatId
-	) {
+		if (emailResult.accountId) {
 		//发送记录使用 recipient 字段，Telegram 模板使用 toEmail
 		emailResult.toEmail = receiveEmail.join(', ');
 
@@ -395,7 +388,7 @@ if (allInternal) {
 				toEmail: receiveEmail.join(', ')
 			};
 			
-			await telegramService.sendEmailToBot(c, telegramEmail);
+			await telegramBotService.sendForAccount(c, telegramEmail);
 		} catch (error) {
 			console.error('站内邮件转发 Telegram 失败:', error);
 		}

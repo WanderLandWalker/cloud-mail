@@ -30,8 +30,65 @@ const dbInit = {
 		await this.v2_9DB(c);
 		await this.v3_0DB(c);
 		await this.v3_1DB(c);
+		await this.v3_2DB(c);
 		await settingService.refresh(c);
 		return c.text('success');
+	},
+
+	async v3_2DB(c) {
+		await c.env.db.batch([
+			c.env.db.prepare(`
+				CREATE TABLE IF NOT EXISTS telegram_bot (
+					bot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+					name TEXT NOT NULL DEFAULT '',
+					token TEXT NOT NULL DEFAULT '',
+					chat_ids TEXT NOT NULL DEFAULT '',
+					status INTEGER NOT NULL DEFAULT 1,
+					custom_domain TEXT NOT NULL DEFAULT '',
+					msg_from TEXT NOT NULL DEFAULT 'only-name',
+					msg_to TEXT NOT NULL DEFAULT 'show',
+					msg_text TEXT NOT NULL DEFAULT 'hide',
+					create_time DATETIME DEFAULT CURRENT_TIMESTAMP
+				)
+			`),
+			c.env.db.prepare(`
+				CREATE TABLE IF NOT EXISTS telegram_bot_account (
+					bot_id INTEGER NOT NULL,
+					account_id INTEGER NOT NULL,
+					PRIMARY KEY (bot_id, account_id)
+				)
+			`),
+			c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_telegram_bot_account_account_id ON telegram_bot_account(account_id)`),
+		]);
+
+		const { botTotal } = await c.env.db.prepare(`SELECT COUNT(*) AS botTotal FROM telegram_bot`).first();
+		if (botTotal > 0) return;
+
+		const legacy = await c.env.db.prepare(`SELECT * FROM setting LIMIT 1`).first();
+		if (!legacy?.tg_bot_token) return;
+
+		await c.env.db.prepare(`
+			INSERT INTO telegram_bot (
+				name, token, chat_ids, status, custom_domain, msg_from, msg_to, msg_text
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`).bind(
+			'Legacy Telegram Bot',
+			legacy.tg_bot_token,
+			legacy.tg_chat_id || '',
+			legacy.tg_bot_status ?? 1,
+			legacy.custom_domain || '',
+			legacy.tg_msg_from || 'only-name',
+			legacy.tg_msg_to || 'show',
+			legacy.tg_msg_text || 'hide',
+		).run();
+
+		const bot = await c.env.db.prepare(`SELECT bot_id FROM telegram_bot ORDER BY bot_id DESC LIMIT 1`).first();
+		if (bot?.bot_id) {
+			await c.env.db.prepare(`
+				INSERT OR IGNORE INTO telegram_bot_account (bot_id, account_id)
+				SELECT ?, account_id FROM account
+			`).bind(bot.bot_id).run();
+		}
 	},
 
 	async v3_1DB(c) {

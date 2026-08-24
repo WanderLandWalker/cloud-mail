@@ -263,7 +263,7 @@
               <div class="setting-item">
                 <div><span>{{ $t('tgBot') }}</span></div>
                 <div class="forward">
-                  <span>{{ setting.tgBotStatus === 0 ? $t('enabled') : $t('disabled') }}</span>
+                  <span>{{ telegramBots.some(bot => bot.status === 0) ? $t('enabled') : $t('disabled') }}</span>
                   <el-button class="opt-button" size="small" type="primary" @click="openTgSetting">
                     <Icon icon="fluent:settings-48-regular" width="18" height="18"/>
                   </el-button>
@@ -535,52 +535,60 @@
             </el-tooltip>
           </div>
         </template>
+        <div class="tg-bot-list">
+          <el-empty v-if="telegramBots.length === 0" :description="$t('noTelegramBots')" />
+          <div v-for="bot in telegramBots" :key="bot.botId" class="tg-bot-item">
+            <div class="tg-bot-item-info">
+              <div class="tg-bot-name">{{ bot.name }}</div>
+              <div class="tg-bot-desc">
+                {{ bot.accountIds.length }} {{ $t('telegramAccounts') }} · {{ bot.chatIds.length }} {{ $t('telegramChats') }}
+              </div>
+            </div>
+            <el-tag :type="bot.status === 0 ? 'success' : 'info'">{{ bot.status === 0 ? $t('enabled') : $t('disabled') }}</el-tag>
+            <el-button size="small" type="primary" @click="openTgBotEdit(bot)">{{ $t('edit') }}</el-button>
+            <el-button size="small" type="danger" @click="deleteTgBot(bot)">{{ $t('delete') }}</el-button>
+          </div>
+          <el-button type="primary" @click="openTgBotEdit()">{{ $t('addTelegramBot') }}</el-button>
+        </div>
+      </el-dialog>
+      <el-dialog v-model="tgBotEditShow" class="forward-dialog" :title="tgBotForm.botId ? $t('editTelegramBot') : $t('addTelegramBot')">
         <div class="forward-set-body">
-          <el-input :placeholder="setting.tgBotToken || $t('tgBotToken')" v-model="tgBotToken" @keyup.enter="tgBotSave"></el-input>
-          <el-input-tag tag-type="warning" :placeholder="$t('toBotTokenDesc')" v-model="tgChatId"
-                        @add-tag="addChatTag"></el-input-tag>
-          <el-input tag-type="warning" :placeholder="$t('customDomainDesc')" v-model="customDomain" @keyup.enter="tgBotSave"></el-input>
+          <el-input v-model="tgBotForm.name" :placeholder="$t('telegramBotName')" />
+          <el-input v-model="tgBotForm.token" type="password" show-password :placeholder="tgBotForm.tokenHint || $t('tgBotToken')" />
+          <el-input-tag tag-type="warning" :placeholder="$t('toBotTokenDesc')" v-model="tgBotForm.chatIds"
+                        @add-tag="addTgBotChatTag"></el-input-tag>
+          <el-select v-model="tgBotForm.accountIds" multiple filterable collapse-tags :placeholder="$t('telegramAccounts')">
+            <el-option
+                v-for="item in telegramAccounts"
+                :key="item.accountId"
+                :label="`${item.email}${item.isDel === 1 ? ` (${$t('deleted')})` : ''}${item.userEmail && item.userEmail !== item.email ? ` (${item.userEmail})` : ''}`"
+                :value="item.accountId"
+            />
+          </el-select>
+          <el-input v-model="tgBotForm.customDomain" :placeholder="$t('customDomainDesc')" />
           <div class="tg-msg-label">
             <span>{{t('from')}}</span>
-            <el-select  v-model="tgMsgFrom" >
-              <el-option
-                  v-for="item in tgMsgFromOption"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-              />
+            <el-select v-model="tgBotForm.msgFrom">
+              <el-option v-for="item in tgMsgFromOption" :key="item.value" :label="item.label" :value="item.value" />
             </el-select>
           </div>
           <div class="tg-msg-label">
             <span>{{t('recipient')}}</span>
-            <el-select  v-model="tgMsgTo" >
-              <el-option
-                  v-for="item in tgMsgToOption"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-              />
+            <el-select v-model="tgBotForm.msgTo">
+              <el-option v-for="item in tgMsgToOption" :key="item.value" :label="item.label" :value="item.value" />
             </el-select>
           </div>
           <div class="tg-msg-label">
             <span>{{t('emailText')}}</span>
-            <el-select  v-model="tgMsgText" >
-              <el-option
-                  v-for="item in tgMsgTextOption"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-              />
+            <el-select v-model="tgBotForm.msgText">
+              <el-option v-for="item in tgMsgTextOption" :key="item.value" :label="item.label" :value="item.value" />
             </el-select>
           </div>
         </div>
         <template #footer>
           <div class="dialog-footer">
-            <el-switch v-model="tgBotStatus" :active-value="0" :inactive-value="1" :active-text="$t('enable')"
-                       :inactive-text="$t('disable')"/>
-            <el-button :loading="settingLoading" type="primary" @click="tgBotSave">
-              {{ $t('save') }}
-            </el-button>
+            <el-switch v-model="tgBotForm.status" :active-value="0" :inactive-value="1" :active-text="$t('enable')" :inactive-text="$t('disable')" />
+            <el-button :loading="telegramBotLoading" type="primary" @click="tgBotSave">{{ $t('save') }}</el-button>
           </div>
         </template>
       </el-dialog>
@@ -817,7 +825,17 @@
 
 <script setup>
 import {computed, defineOptions, nextTick, reactive, ref} from "vue";
-import {deleteBackground, setBackground, setBlackList, settingQuery, settingSet} from "@/request/setting.js";
+import {
+  deleteBackground,
+  setBackground,
+  setBlackList,
+  settingQuery,
+  settingSet,
+  telegramBotAccounts,
+  telegramBotDelete,
+  telegramBotList,
+  telegramBotSave
+} from "@/request/setting.js";
 import {useSettingStore} from "@/store/setting.js";
 import {useUiStore} from "@/store/ui.js";
 import {useUserStore} from "@/store/user.js";
@@ -837,7 +855,7 @@ defineOptions({
   name: 'sys-setting'
 })
 
-const currentVersion = 'v3.1.0'
+const currentVersion = 'v3.2.0'
 const hasUpdate = ref(false)
 let getUpdateErrorCount = 1;
 const {t, locale} = useI18n();
@@ -854,6 +872,8 @@ const aiCodeFilterShow = ref(false)
 const r2DomainShow = ref(false)
 const turnstileShow = ref(false)
 const tgSettingShow = ref(false)
+const tgBotEditShow = ref(false)
+const telegramBotLoading = ref(false)
 const noticePopupShow = ref(false)
 const thirdEmailShow = ref(false)
 const forwardRulesShow = ref(false)
@@ -929,20 +949,27 @@ const authRefreshOptions = computed(() => [
   {label: '20s', value: 20},
 ])
 
-const tgChatId = ref([])
-const customDomain = ref('')
-const tgBotStatus = ref(0)
-const tgBotToken = ref('')
+const telegramBots = ref([])
+const telegramAccounts = ref([])
+const tgBotForm = reactive({
+  botId: 0,
+  name: '',
+  token: '',
+  tokenHint: '',
+  chatIds: [],
+  accountIds: [],
+  status: 1,
+  customDomain: '',
+  msgFrom: 'only-name',
+  msgTo: 'show',
+  msgText: 'hide',
+})
 const forwardEmail = ref([])
 const forwardStatus = ref(0)
 const emailColumnWidth = ref(0)
 const tokenColumnWidth = ref(0)
 const ruleType = ref(0)
 const ruleEmail = ref([])
-const tgMsgFrom = ref('')
-const tgMsgTo = ref('')
-const tgMsgText = ref('')
-
 const tgMsgFromOption = [{label: t('show'), value: 'show'}, {label: t('hide'), value: 'hide'}, {label: t('onlyName'), value:'only-name'}]
 const tgMsgToOption = [{label: t('show'), value: 'show'}, {label: t('hide'), value: 'hide'}]
 const tgMsgTextOption = [{label: t('show'), value: 'show'}, {label: t('hide'), value: 'hide'}]
@@ -953,6 +980,7 @@ getUpdate()
 
 function getSettings() {
   settingReady.value = false
+  loadTelegramBots()
   settingQuery().then(settingData => {
     setting.value = settingData
     settingStore.domainList = settingData.domainList;
@@ -1065,19 +1093,31 @@ function closedSetBackground() {
   backgroundUrl.value = setting.value.background?.startsWith('http') ? setting.value.background : ''
 }
 
+function loadTelegramBots() {
+  Promise.all([telegramBotList(), telegramBotAccounts()]).then(([bots, accounts]) => {
+    telegramBots.value = bots
+    telegramAccounts.value = accounts
+  })
+}
+
 function openTgSetting() {
-  tgBotStatus.value = setting.value.tgBotStatus
-  tgBotToken.value = ''
-  customDomain.value = setting.value.customDomain
-  tgMsgFrom.value = setting.value.tgMsgFrom
-  tgMsgText.value = setting.value.tgMsgText
-  tgMsgTo.value = setting.value.tgMsgTo
-  tgChatId.value = []
-  if (setting.value.tgChatId) {
-    const list = setting.value.tgChatId.split(',')
-    tgChatId.value.push(...list)
-  }
+  loadTelegramBots()
   tgSettingShow.value = true
+}
+
+function openTgBotEdit(bot = null) {
+  tgBotForm.botId = bot?.botId || 0
+  tgBotForm.name = bot?.name || ''
+  tgBotForm.token = ''
+  tgBotForm.tokenHint = bot?.token || ''
+  tgBotForm.chatIds = [...(bot?.chatIds || [])]
+  tgBotForm.accountIds = [...(bot?.accountIds || [])]
+  tgBotForm.status = bot?.status ?? 0
+  tgBotForm.customDomain = bot?.customDomain || ''
+  tgBotForm.msgFrom = bot?.msgFrom || 'only-name'
+  tgBotForm.msgTo = bot?.msgTo || 'show'
+  tgBotForm.msgText = bot?.msgText || 'hide'
+  tgBotEditShow.value = true
 }
 
 function openNoticePopupSetting() {
@@ -1162,17 +1202,17 @@ function ruleEmailAddTag(val) {
   })
 }
 
-function addChatTag(val) {
+function addTgBotChatTag(val) {
 
   const chatIds = Array.from(new Set(
       val.split(/[,，]/).map(item => item.trim()).filter(item => item)
   ));
 
-  tgChatId.value.splice(tgChatId.value.length - 1, 1)
+  tgBotForm.chatIds.splice(tgBotForm.chatIds.length - 1, 1)
 
   chatIds.forEach(id => {
     if (!isNaN(Number(id))) {
-      tgChatId.value.push(id)
+      tgBotForm.chatIds.push(id)
     }
   })
 }
@@ -1207,16 +1247,28 @@ function saveS3() {
 }
 
 function tgBotSave() {
-  const form = {
-    customDomain: customDomain.value,
-    tgBotStatus: tgBotStatus.value,
-    tgChatId: tgChatId.value + '',
-    tgMsgFrom: tgMsgFrom.value,
-    tgMsgText: tgMsgText.value,
-    tgMsgTo: tgMsgTo.value
-  }
-  if (tgBotToken.value) form.tgBotToken = tgBotToken.value
-  editSetting(form)
+  if (telegramBotLoading.value) return
+  telegramBotLoading.value = true
+  telegramBotSave({...tgBotForm}).then(() => {
+    tgBotEditShow.value = false
+    loadTelegramBots()
+    ElMessage({message: t('saveSuccessMsg'), type: 'success', plain: true})
+  }).finally(() => {
+    telegramBotLoading.value = false
+  })
+}
+
+function deleteTgBot(bot) {
+  ElMessageBox.confirm(t('deleteTelegramBotConfirm', {msg: bot.name}), {
+    confirmButtonText: t('confirm'),
+    cancelButtonText: t('cancel'),
+    type: 'warning'
+  }).then(() => {
+    telegramBotDelete(bot.botId).then(() => {
+      loadTelegramBots()
+      ElMessage({message: t('delSuccessMsg'), type: 'success', plain: true})
+    })
+  }).catch(() => {})
 }
 
 function forwardEmailSave() {
@@ -1843,6 +1895,38 @@ function editSetting(settingForm, refreshStatus = true) {
       width: v-bind(tgMsgLabelWidth);
     }
   }
+}
+
+.tg-bot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tg-bot-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--base-border-color);
+  border-radius: 6px;
+}
+
+.tg-bot-item-info {
+  min-width: 0;
+}
+
+.tg-bot-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tg-bot-desc {
+  color: var(--secondary-text-color);
+  font-size: 12px;
+  margin-top: 4px;
 }
 
 .forward {

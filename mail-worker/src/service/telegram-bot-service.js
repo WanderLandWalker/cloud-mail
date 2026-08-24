@@ -4,7 +4,7 @@ import account from '../entity/account';
 import user from '../entity/user';
 import telegramBot from '../entity/telegram-bot';
 import telegramBotAccount from '../entity/telegram-bot-account';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, or } from 'drizzle-orm';
 import { settingConst } from '../const/entity-const';
 import { t } from '../i18n/i18n';
 import settingService from './setting-service';
@@ -46,6 +46,7 @@ const telegramBotService = {
 			msgFrom: row.msgFrom,
 			msgTo: row.msgTo,
 			msgText: row.msgText,
+			routeType: row.routeType,
 			accountIds: accountMap.get(row.botId) || [],
 		}));
 	},
@@ -94,6 +95,9 @@ const telegramBotService = {
 			msgFrom: params.msgFrom || 'only-name',
 			msgTo: params.msgTo || 'show',
 			msgText: params.msgText || 'hide',
+			routeType: Object.values(settingConst.tgBotRouteType).includes(params.routeType)
+				? params.routeType
+				: (existing?.routeType || settingConst.tgBotRouteType.RECEIVE),
 		};
 
 		let savedBotId = botId;
@@ -124,7 +128,7 @@ const telegramBotService = {
 		]);
 	},
 
-	async listByAccountId(c, accountId) {
+	async listByAccountId(c, accountId, source = settingConst.tgBotRouteType.RECEIVE) {
 		try {
 			return await orm(c).select({
 				botId: telegramBot.botId,
@@ -135,11 +139,16 @@ const telegramBotService = {
 				msgFrom: telegramBot.msgFrom,
 				msgTo: telegramBot.msgTo,
 				msgText: telegramBot.msgText,
+				routeType: telegramBot.routeType,
 			}).from(telegramBot)
 				.innerJoin(telegramBotAccount, eq(telegramBotAccount.botId, telegramBot.botId))
 				.where(and(
 					eq(telegramBotAccount.accountId, Number(accountId)),
-					eq(telegramBot.status, settingConst.tgBotStatus.OPEN)
+					eq(telegramBot.status, settingConst.tgBotStatus.OPEN),
+					or(
+						eq(telegramBot.routeType, source),
+						eq(telegramBot.routeType, settingConst.tgBotRouteType.BOTH)
+					)
 				))
 				.all();
 		} catch (error) {
@@ -160,13 +169,34 @@ const telegramBotService = {
 			msgFrom: setting.tgMsgFrom,
 			msgTo: setting.tgMsgTo,
 			msgText: setting.tgMsgText,
+			routeType: settingConst.tgBotRouteType.BOTH,
 		}];
 	},
 
-	async sendForAccount(c, email) {
-		if (!email?.accountId) return;
-		const bots = await this.listByAccountId(c, email.accountId);
+	async sendForRoutes(c, email, routes) {
+		const validRoutes = routes
+			.filter(route => route?.accountId)
+			.map(route => ({
+				accountId: Number(route.accountId),
+				source: Object.values(settingConst.tgBotRouteType).includes(route.source)
+					? route.source
+					: settingConst.tgBotRouteType.RECEIVE,
+			}))
+			.filter(route => Number.isInteger(route.accountId) && route.accountId > 0);
+		if (validRoutes.length === 0) return;
+
+		const botGroups = await Promise.all(validRoutes.map(route => this.listByAccountId(c, route.accountId, route.source)));
+		const bots = [...new Map(botGroups.flat().map(bot => [bot.botId, bot])).values()];
 		await Promise.all(bots.map(bot => telegramService.sendEmailToBot(c, email, bot)));
+	},
+
+	async sendForAccount(c, email, source = settingConst.tgBotRouteType.RECEIVE) {
+		if (!email?.accountId) return;
+		return this.sendForRoutes(c, email, [{accountId: email.accountId, source}]);
+	},
+
+	async sendForAccounts(c, email, accountIds, source = settingConst.tgBotRouteType.RECEIVE) {
+		return this.sendForRoutes(c, email, accountIds.map(accountId => ({accountId, source})));
 	},
 };
 

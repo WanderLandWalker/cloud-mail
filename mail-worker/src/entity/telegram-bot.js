@@ -11,6 +11,7 @@ export const telegramBot = sqliteTable('telegram_bot', {
 	msgFrom: text('msg_from').notNull().default('only-name'),
 	msgTo: text('msg_to').notNull().default('show'),
 	msgText: text('msg_text').notNull().default('hide'),
+	routeType: text('route_type').notNull().default('receive'),
 	createTime: text('create_time').default(sql`CURRENT_TIMESTAMP`),
 });
 

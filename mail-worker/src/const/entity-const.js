@@ -112,6 +112,11 @@ export const settingConst = {
 		OPEN: 0,
 		CLOSE: 1,
 	},
+	tgBotRouteType: {
+		RECEIVE: 'receive',
+		SEND: 'send',
+		BOTH: 'both',
+	},
 	ruleType: {
 		ALL: 0,
 		RULE: 1

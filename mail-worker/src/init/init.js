@@ -31,8 +31,18 @@ const dbInit = {
 		await this.v3_0DB(c);
 		await this.v3_1DB(c);
 		await this.v3_2DB(c);
+		await this.v3_3DB(c);
 		await settingService.refresh(c);
 		return c.text('success');
+	},
+
+	async v3_3DB(c) {
+		const columns = await c.env.db.prepare(`PRAGMA table_info(telegram_bot)`).all();
+		if (columns.results.some(column => column.name === 'route_type')) return;
+
+		await c.env.db.prepare(`ALTER TABLE telegram_bot ADD COLUMN route_type TEXT NOT NULL DEFAULT 'receive'`).run();
+		// Existing multi-Bot configurations previously handled both incoming and internal mail.
+		await c.env.db.prepare(`UPDATE telegram_bot SET route_type = 'both'`).run();
 	},
 
 	async v3_2DB(c) {

@@ -565,6 +565,12 @@
                 :value="item.accountId"
             />
           </el-select>
+          <div class="tg-msg-label">
+            <span>{{ t('telegramRouteType') }}</span>
+            <el-select v-model="tgBotForm.routeType">
+              <el-option v-for="item in tgRouteTypeOption" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </div>
           <el-input v-model="tgBotForm.customDomain" :placeholder="$t('customDomainDesc')" />
           <div class="tg-msg-label">
             <span>{{t('from')}}</span>
@@ -855,7 +861,7 @@ defineOptions({
   name: 'sys-setting'
 })
 
-const currentVersion = 'v3.2.0'
+const currentVersion = 'v3.3.0'
 const hasUpdate = ref(false)
 let getUpdateErrorCount = 1;
 const {t, locale} = useI18n();
@@ -959,6 +965,7 @@ const tgBotForm = reactive({
   chatIds: [],
   accountIds: [],
   status: 1,
+  routeType: 'receive',
   customDomain: '',
   msgFrom: 'only-name',
   msgTo: 'show',
@@ -973,6 +980,11 @@ const ruleEmail = ref([])
 const tgMsgFromOption = [{label: t('show'), value: 'show'}, {label: t('hide'), value: 'hide'}, {label: t('onlyName'), value:'only-name'}]
 const tgMsgToOption = [{label: t('show'), value: 'show'}, {label: t('hide'), value: 'hide'}]
 const tgMsgTextOption = [{label: t('show'), value: 'show'}, {label: t('hide'), value: 'hide'}]
+const tgRouteTypeOption = [
+  {label: t('telegramRouteReceive'), value: 'receive'},
+  {label: t('telegramRouteSend'), value: 'send'},
+  {label: t('telegramRouteBoth'), value: 'both'},
+]
 const tgMsgLabelWidth = computed(() => locale.value === 'en' ? '120px' : '100px');
 
 getSettings()
@@ -1113,6 +1125,7 @@ function openTgBotEdit(bot = null) {
   tgBotForm.chatIds = [...(bot?.chatIds || [])]
   tgBotForm.accountIds = [...(bot?.accountIds || [])]
   tgBotForm.status = bot?.status ?? 0
+  tgBotForm.routeType = bot?.routeType || 'receive'
   tgBotForm.customDomain = bot?.customDomain || ''
   tgBotForm.msgFrom = bot?.msgFrom || 'only-name'
   tgBotForm.msgTo = bot?.msgTo || 'show'

@@ -374,26 +374,41 @@ const emailService = {
 		const attList = await attService.selectByEmailIds(c, [emailResult.emailId]);
 		emailResult.attList = attList;
 
-		//如果全是站内接收方，直接写入数据库，并转发到 Telegram
-if (allInternal) {
-	await this.HandleOnSiteEmail(c, receiveEmail, emailResult, attList);
+		//站内邮件需要保存收件副本；Telegram 则按发件和收件模式分别路由
+		if (allInternal) {
+			await this.HandleOnSiteEmail(c, receiveEmail, emailResult, attList);
+		}
 
 		if (emailResult.accountId) {
-		//发送记录使用 recipient 字段，Telegram 模板使用 toEmail
-		emailResult.toEmail = receiveEmail.join(', ');
+			//发送记录使用 recipient 字段，Telegram 模板使用 toEmail
+			emailResult.toEmail = receiveEmail.join(', ');
 
-		try {
-			const telegramEmail = {
-				...emailResult,
-				toEmail: receiveEmail.join(', ')
-			};
-			
-			await telegramBotService.sendForAccount(c, telegramEmail);
-		} catch (error) {
-			console.error('站内邮件转发 Telegram 失败:', error);
+			try {
+				const telegramEmail = {
+					...emailResult,
+					toEmail: receiveEmail.join(', ')
+				};
+				const routes = [
+					{accountId: emailResult.accountId, source: settingConst.tgBotRouteType.SEND}
+				];
+
+				if (allInternal) {
+					const recipientAccounts = await orm(c)
+						.select({accountId: account.accountId})
+						.from(account)
+						.where(inArray(account.email, receiveEmail))
+						.all();
+					routes.push(...recipientAccounts.map(row => ({
+						accountId: row.accountId,
+						source: settingConst.tgBotRouteType.RECEIVE
+					})));
+				}
+
+				await telegramBotService.sendForRoutes(c, telegramEmail, routes);
+			} catch (error) {
+				console.error('邮件转发 Telegram 失败:', error);
+			}
 		}
-	}
-}
 
 		const dateStr = dayjs().format('YYYY-MM-DD');
 		let daySendTotal = await c.env.kv.get(kvConst.SEND_DAY_COUNT + dateStr);
